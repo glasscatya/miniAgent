@@ -5,9 +5,24 @@
 - 只支持 OpenAI 风格的 `chat/completions` 接口；
 - 认证、base URL、模型参数都放在 `config.toml`；
 - 只给模型一个工具 `pwsh`，用来执行 PowerShell；
-- `agent.py` 循环调用模型，直到模型不再请求工具或达到 `max_turns`。
+- `loop.py` 循环调用模型，直到模型不再请求工具或达到 `max_turns`。
 
 无第三方依赖，只需要 Python 3.11+（使用了标准库 `tomllib`）。
+
+## 项目结构
+
+| 文件 | 职责 |
+| --- | --- |
+| `agent.py` | 入口与组合根：参数解析、单次/交互模式、退出码 |
+| `loop.py` | agent 循环：请求模型、执行工具、追加结果 |
+| `llm.py` | OpenAI 兼容客户端：请求、重试、响应解析 |
+| `tools.py` | `Tool` / `ToolRegistry` 与内置 `pwsh` 工具 |
+| `config.py` | 配置校验、shell 查找、运行时设置 |
+| `prompt.py` | 默认系统提示词与运行时上下文 |
+| `errors.py` | `ConfigError` / `AgentError` |
+| `banner.py` | 可选的启动横幅（纯装饰层） |
+
+`agent.py` 仍然是唯一入口，原有运行命令不变。
 
 ## 配置
 
@@ -90,6 +105,13 @@ python .\agent.py --no-banner
 }
 ```
 
+工具通过 `tools.py` 里的 `ToolRegistry` 注册。启动时 `agent.py` 在读完配置后调用一次 `build_default_registry(config)`，把 `pwsh` 作为唯一的内置工具注册进去，再交给 `loop.run_agent()`：
+
+- 工具定义（名称、描述、JSON Schema、handler）就在 `tools.py`；
+- 注册动作集中在 `build_default_registry()`，不在 import 时发生——因为 schema 里要嵌入配置中的默认超时；
+- 新增工具时只需定义 `Tool` 并在 `build_default_registry()` 里 `register()`，循环和入口都不用改；
+- handler 返回字符串而不是抛异常，工具错误会作为 `error: ...` 交给模型自行修正。
+
 每次调用都会启动一个新的 `pwsh -NoProfile -NonInteractive -Command ...` 进程：
 
 - 当前目录取自启动参数 `--cwd`，默认为启动 `agent.py` 时所在的目录；
@@ -104,8 +126,8 @@ python .\agent.py --no-banner
 
 每个用户任务：
 
-1. 把系统提示词和对话发给模型；
-2. 模型若返回 `tool_calls`，逐个执行并把结果作为 `role=tool` 追加回对话；
+1. `loop.run_agent()` 把系统提示词和对话发给模型；
+2. 模型若返回 `tool_calls`，通过 `ToolRegistry.execute()` 逐个执行，并把结果作为 `role=tool` 追加回对话；
 3. 再次请求模型；
 4. 模型不再调用工具时，打印回答，任务结束。
 
@@ -121,6 +143,16 @@ python .\agent.py --no-banner
 - 单工具；
 - 无对话持久化；
 - 无命令审批、沙箱、MCP 或多模型路由。
+
+## 测试
+
+测试使用标准库 `unittest`，无需第三方依赖：
+
+```powershell
+python -m unittest discover -s tests -t . -v
+```
+
+测试会在 `tests/.tmp/` 下创建临时文件，该目录已加入 `.gitignore`。
 
 ## 许可证
 本项目基于 [MIT License](LICENSE) 开源。
