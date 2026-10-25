@@ -1,0 +1,10 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python.defaultInterpreterPath": "D:\\app\\conda\\python.exe",
+    "code-runner.respectShebang": false,
+    "code-runner.runInTerminal": true,
+    "code-runner.executorMap": {
+        "python": "D:\\app\\conda\\python.exe -u"
+    }
+}

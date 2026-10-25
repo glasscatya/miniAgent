@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>miniAgent</title>
+<style>
+  :root{
+    --bg:#faf9f6; --fg:#2c2c2a; --muted:#7c7a74; --line:#e4e1d9;
+    --accent:#6b7a5e; --code-bg:#f2f0ea;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#1a1a18; --fg:#e8e6e1; --muted:#8f8c85; --line:#33322e;
+      --accent:#9aab8b; --code-bg:#232320;
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.75 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    padding:6rem 1.5rem 8rem;
+  }
+  main{max-width:38rem; margin:0 auto}
+
+  h1{
+    font-family:Georgia,"Songti SC","Noto Serif SC",serif;
+    font-size:2.1rem; font-weight:400; letter-spacing:.01em;
+    margin:0 0 .35rem;
+  }
+  .lede{color:var(--muted); margin:0 0 3rem; font-size:.95rem}
+
+  h2{
+    font-size:.78rem; font-weight:600; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent);
+    margin:2.75rem 0 .9rem;
+  }
+  p{margin:0 0 1rem}
+  ul{margin:0; padding-left:1.1rem}
+  li{margin-bottom:.45rem}
+  li::marker{color:var(--accent)}
+
+  code{
+    font-family:ui-monospace,"Cascadia Code",Consolas,monospace;
+    font-size:.875em; background:var(--code-bg);
+    padding:.12em .38em; border-radius:3px;
+  }
+  pre{
+    background:var(--code-bg); border-radius:5px;
+    padding:1rem 1.15rem; overflow-x:auto; margin:0 0 1rem;
+    font-size:.85rem; line-height:1.65;
+  }
+  pre code{background:none; padding:0; font-size:inherit}
+
+  .note{
+    border-left:2px solid var(--line); padding-left:1rem;
+    color:var(--muted); font-size:.9rem;
+  }
+
+  footer{
+    margin-top:4rem; padding-top:1.5rem;
+    border-top:1px solid var(--line);
+    color:var(--muted); font-size:.82rem;
+  }
+  ::selection{background:var(--line)}
+</style>
+</head>
+<body>
+<main>
+  <h1>miniAgent</h1>
+  <p class="lede">一个只做一件事的 Windows 本机 agent。</p>
+
+  <h2>它是什么</h2>
+  <p>把一句话任务交给模型，模型每轮可以执行一条 PowerShell 命令，看到结果后继续，直到给出答案。没有插件、没有沙箱、没有审批环节。</p>
+
+  <h2>三条设计取舍</h2>
+  <ul>
+    <li><strong>只有一个工具</strong> —— <code>pwsh</code>。机器上装了什么，它就能用什么。</li>
+    <li><strong>无状态</strong> —— 每次调用都是新进程，变量和 <code>cd</code> 不保留。</li>
+    <li><strong>非交互</strong> —— 命令必须自问自答，不能等待输入。</li>
+  </ul>
+
+  <h2>运行</h2>
+  <pre><code>python .\agent.py
+python .\agent.py "列出当前目录的 Python 文件"</code></pre>
+  <p>依赖：Python 3.11+，无需第三方库。模型接口为 OpenAI 风格的 <code>chat/completions</code>。</p>
+
+  <h2>边界</h2>
+  <p class="note">模型生成的命令会以当前用户权限直接执行，可以读写删除文件、访问网络。请只在可信目录或隔离环境中使用，并留意运行时的 <code>[tool]</code> 预览。</p>
+
+  <footer>单文件 · 单工具 · 无对话持久化</footer>
+</main>
+</body>
+</html>
