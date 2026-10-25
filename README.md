@@ -121,3 +121,6 @@ python .\agent.py --no-banner
 - 单工具；
 - 无对话持久化；
 - 无命令审批、沙箱、MCP 或多模型路由。
+
+## 许可证
+本项目基于 [MIT License](LICENSE) 开源。
