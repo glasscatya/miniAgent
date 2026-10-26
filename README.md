@@ -15,6 +15,7 @@
 | --- | --- |
 | `agent.py` | 入口与组合根：参数解析、单次/交互模式、退出码 |
 | `loop.py` | agent 循环：请求模型、执行工具、追加结果 |
+| `durable.py` | 持久化接缝：`AgentContext` 协议与不落盘的 `LiveContext` |
 | `llm.py` | OpenAI 兼容客户端：请求、重试、响应解析 |
 | `tools.py` | `Tool` / `ToolRegistry` 与内置 `pwsh` 工具 |
 | `config.py` | 配置校验、shell 查找、运行时设置 |
@@ -131,7 +132,14 @@ python .\agent.py --no-banner
 3. 再次请求模型；
 4. 模型不再调用工具时，打印回答，任务结束。
 
-`agent.max_turns` 限制每个任务的模型往返次数，防止无限循环。agent 没有审批、沙箱或网络隔离。
+循环分成两层，边界就是未来换成持久化执行的那条线：
+
+- `loop.run_task()` 只写控制流：无网络、无子进程、无时钟读取，所有副作用都经过 `durable.AgentContext`；
+- `durable.AgentContext` 只有 `chat()` 和 `call_tool()` 两个方法，对应 Workflow 引擎里的 Activity；
+- `durable.LiveContext` 是当前实现，直接调用 `llm.chat()` 和 `ToolRegistry.execute()`，不记录任何东西；
+- `loop.run_agent()` 是给入口用的兼容包装，签名与之前一致。
+
+要换成事件溯源或 Temporal，只需换掉 `AgentContext` 的实现，`run_task()` 一行都不用改。`agent.max_turns` 限制每个任务的模型往返次数，防止无限循环。agent 没有审批、沙箱或网络隔离。
 
 ## 安全提示
 

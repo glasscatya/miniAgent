@@ -8,6 +8,7 @@ from contextlib import redirect_stderr
 from typing import Any
 from unittest import mock
 
+import durable
 import loop
 from errors import AgentError
 from tests.helpers import make_config, make_runtime
@@ -49,7 +50,7 @@ class RunAgentTests(unittest.TestCase):
         ]
 
     def test_returns_text_without_tool_calls(self) -> None:
-        with mock.patch.object(loop, "chat", return_value=response("hello")) as chat:
+        with mock.patch.object(durable, "chat", return_value=response("hello")) as chat:
             answer = loop.run_agent(self.runtime, self.messages, self.registry)
         self.assertEqual(answer, "hello")
         self.assertEqual(chat.call_count, 1)
@@ -61,7 +62,7 @@ class RunAgentTests(unittest.TestCase):
             response(None, [tool_call(arguments='{"n": 1}')], "tool_calls"),
             response("done"),
         ]
-        with mock.patch.object(loop, "chat", side_effect=responses) as chat:
+        with mock.patch.object(durable, "chat", side_effect=responses) as chat:
             answer = loop.run_agent(self.runtime, self.messages, self.registry)
         self.assertEqual(answer, "done")
         self.assertEqual(chat.call_count, 2)
@@ -85,7 +86,7 @@ class RunAgentTests(unittest.TestCase):
             ),
             response("done"),
         ]
-        with mock.patch.object(loop, "chat", side_effect=responses):
+        with mock.patch.object(durable, "chat", side_effect=responses):
             loop.run_agent(self.runtime, self.messages, self.registry)
         tool_messages = [message for message in self.messages if message["role"] == "tool"]
         self.assertEqual([message["tool_call_id"] for message in tool_messages], ["a", "b"])
@@ -96,7 +97,7 @@ class RunAgentTests(unittest.TestCase):
             response(None, [tool_call(name="ghost")], "tool_calls"),
             response("done"),
         ]
-        with mock.patch.object(loop, "chat", side_effect=responses):
+        with mock.patch.object(durable, "chat", side_effect=responses):
             answer = loop.run_agent(self.runtime, self.messages, self.registry)
         self.assertEqual(answer, "done")
         self.assertIn("unknown tool `ghost`", self.messages[3]["content"])
@@ -104,7 +105,7 @@ class RunAgentTests(unittest.TestCase):
     def test_turn_limit_raises_agent_error(self) -> None:
         self.runtime = make_runtime(config=make_config(max_turns=2))
         responses = [response(None, [tool_call()], "tool_calls")] * 2
-        with mock.patch.object(loop, "chat", side_effect=responses) as chat:
+        with mock.patch.object(durable, "chat", side_effect=responses) as chat:
             with self.assertRaises(AgentError) as ctx:
                 loop.run_agent(self.runtime, self.messages, self.registry)
         self.assertIn("Stopped after 2 turns", str(ctx.exception))
@@ -114,19 +115,19 @@ class RunAgentTests(unittest.TestCase):
     def test_length_finish_reason_warns(self) -> None:
         stderr = io.StringIO()
         with mock.patch.object(
-            loop, "chat", return_value=response("partial", finish_reason="length")
+            durable, "chat", return_value=response("partial", finish_reason="length")
         ), redirect_stderr(stderr):
             answer = loop.run_agent(self.runtime, self.messages, self.registry)
         self.assertEqual(answer, "partial")
         self.assertIn("model hit max_tokens", stderr.getvalue())
 
     def test_empty_answer_is_returned_as_empty_string(self) -> None:
-        with mock.patch.object(loop, "chat", return_value=response(None)):
+        with mock.patch.object(durable, "chat", return_value=response(None)):
             answer = loop.run_agent(self.runtime, self.messages, self.registry)
         self.assertEqual(answer, "")
 
     def test_api_errors_propagate(self) -> None:
-        with mock.patch.object(loop, "chat", side_effect=AgentError("boom")):
+        with mock.patch.object(durable, "chat", side_effect=AgentError("boom")):
             with self.assertRaises(AgentError):
                 loop.run_agent(self.runtime, self.messages, self.registry)
 

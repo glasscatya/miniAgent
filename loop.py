@@ -1,8 +1,12 @@
 """The agent loop: ask the model, execute requested tools, repeat.
 
-Deliberately thin: it depends on `llm.chat` / `llm.parse_assistant` and on a
-`ToolRegistry`, so tests can drive it with scripted responses and fake tools
-without touching the network or starting a PowerShell process.
+Two layers, deliberately separated:
+
+- `run_task()` is the control flow. It is deterministic: no network, no
+  subprocess, no clock. Every effect goes through an `AgentContext`, so the same
+  function can run live or be replayed against recorded results.
+- `run_agent()` binds the live context. It keeps the original signature so the
+  composition root and the tests did not have to move.
 """
 
 from __future__ import annotations
@@ -11,9 +15,40 @@ import sys
 from typing import Any
 
 from config import Runtime
+from durable import AgentContext, LiveContext
 from errors import AgentError
-from llm import chat, parse_assistant
 from tools import ToolRegistry
+
+
+def run_task(
+    ctx: AgentContext,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    max_turns: int,
+) -> str:
+    """Run one task until the model answers without requesting a tool.
+
+    `messages` is appended to in place and returned implicitly through `ctx`, so
+    a caller that keeps the list (interactive mode) still sees the full history.
+
+    Replaying this function re-prints the `[warn]` line; stderr output is not
+    part of the recorded state and is the first visible cost of replay.
+    """
+    for _ in range(max_turns):
+        turn = ctx.chat(messages, tools)
+        messages.append(turn.assistant)
+        if not turn.calls:
+            if turn.finish_reason == "length":
+                print("[warn] model hit max_tokens.", file=sys.stderr)
+            return turn.assistant["content"]
+        for call in turn.calls:
+            function = call["function"]
+            result = ctx.call_tool(function["name"], function["arguments"])
+            messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+    raise AgentError(
+        f"Stopped after {max_turns} turns without an answer. "
+        "Increase `agent.max_turns` to continue."
+    )
 
 
 def run_agent(
@@ -21,21 +56,6 @@ def run_agent(
     messages: list[dict[str, Any]],
     registry: ToolRegistry,
 ) -> str:
-    """Run one task until the model answers without requesting a tool."""
-    config = runtime.config
-    tools = registry.specs()
-    for _ in range(config.max_turns):
-        assistant, calls, finish_reason = parse_assistant(chat(config, messages, tools))
-        messages.append(assistant)
-        if not calls:
-            if finish_reason == "length":
-                print("[warn] model hit max_tokens.", file=sys.stderr)
-            return assistant["content"]
-        for call in calls:
-            function = call["function"]
-            result = registry.execute(function["name"], function["arguments"], runtime)
-            messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
-    raise AgentError(
-        f"Stopped after {config.max_turns} turns without an answer. "
-        "Increase `agent.max_turns` to continue."
-    )
+    """Run one task against the live backend (nothing is recorded)."""
+    ctx = LiveContext(runtime, registry)
+    return run_task(ctx, messages, registry.specs(), runtime.config.max_turns)
