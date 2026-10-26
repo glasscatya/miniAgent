@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     runtime = Runtime(config=config, shell=shell, cwd=cwd)
     registry = build_default_registry(config)
-    system = system_message(config.system_prompt, cwd)
+    system = system_message(config.system_prompt, cwd, runtime)
     prompt = " ".join(args.prompt).strip()
 
     if prompt:

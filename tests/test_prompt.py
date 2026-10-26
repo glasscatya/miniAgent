@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 import prompt
+from tests.helpers import make_runtime
 
 
 class SystemMessageTests(unittest.TestCase):
@@ -27,6 +28,16 @@ class SystemMessageTests(unittest.TestCase):
         self.assertIn(f"- Working directory: {self.cwd}", content)
         self.assertIn("- OS:", content)
         self.assertIn("- Current time:", content)
+
+    def test_runtime_limits_are_added_when_runtime_is_given(self) -> None:
+        runtime = make_runtime(cwd=self.cwd)
+        content = prompt.system_message(None, self.cwd, runtime)["content"]
+        self.assertIn(f"- Shell: {runtime.shell}", content)
+        self.assertIn(
+            f"- Command timeout: {runtime.config.shell_timeout}s default", content
+        )
+        self.assertIn(f"- Output limit: {runtime.config.max_output} characters", content)
+        self.assertIn(f"- Model turns per task: {runtime.config.max_turns}", content)
 
 
 if __name__ == "__main__":
