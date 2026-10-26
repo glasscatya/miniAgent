@@ -16,6 +16,8 @@
 | `agent.py` | 入口与组合根：参数解析、单次/交互模式、退出码 |
 | `loop.py` | agent 循环：请求模型、执行工具、追加结果 |
 | `durable.py` | 持久化接缝：`AgentContext` 协议与不落盘的 `LiveContext` |
+| `events.py` | 事件日志与回放后端：JSONL 追加、崩溃恢复、分歧检测 |
+| `demo_events.py` | 事件溯源演示：三种崩溃点，不需要 API key |
 | `llm.py` | OpenAI 兼容客户端：请求、重试、响应解析 |
 | `tools.py` | `Tool` / `ToolRegistry` 与内置 `pwsh` 工具 |
 | `config.py` | 配置校验、shell 查找、运行时设置 |
@@ -141,6 +143,53 @@ python .\agent.py --no-banner
 
 要换成事件溯源或 Temporal，只需换掉 `AgentContext` 的实现，`run_task()` 一行都不用改。`agent.max_turns` 限制每个任务的模型往返次数，防止无限循环。agent 没有审批、沙箱或网络隔离。
 
+## 事件日志与续跑
+
+`--events` 把一次任务写成只追加的 JSONL 事件日志，`--resume` 从日志续跑：
+
+```powershell
+python .\agent.py --events .\.demo\run.jsonl "统计当前目录的 Python 文件数量"
+python .\agent.py --events .\.demo\run.jsonl --resume
+```
+
+事件类型：
+
+| 事件 | 写入时机 | 内容 |
+| --- | --- | --- |
+| `task_started` | 任务开始 | 初始 `messages` 与 `max_turns`。system 提示词含当前时间，必须记录而不是重建 |
+| `chat_completed` | 模型响应后 | assistant 消息、`tool_calls`、`finish_reason`、请求指纹 |
+| `tool_started` | 命令启动**之前** | 执行意图。崩溃后据此判断"可能已经执行" |
+| `tool_completed` | 命令结束之后 | 返回给模型的文本 |
+| `task_finished` | 任务结束 | 最终回答 |
+
+回放不是读状态：`loop.run_task()` 会从头重跑，每个 `chat()` / `call_tool()` 都先从日志取结果，日志用完才真正调用。模型的请求（messages + tools）会算 sha256 指纹，对不上就报 `replay diverged`，而不是静默错位。
+
+三种崩溃点对应三种结果：
+
+| 崩溃位置 | 日志状态 | 恢复行为 |
+| --- | --- | --- |
+| 模型响应落盘后 | 有 `chat_completed`，无 `tool_started` | 正常续跑，工具只执行一次 |
+| 命令启动前 | 有 `tool_started`，无 `tool_completed` | 默认 `abort`：结果未知，拒绝猜测 |
+| 命令执行后、结果落盘前 | 同上 | 默认 `abort`；`--resume-policy retry` 会重跑，非幂等副作用重复 |
+
+`--resume-policy retry` 是 at-least-once：能继续，但可能重复。默认 `abort` 是 at-most-once：不重复，但放弃已完成的工作。
+
+演示脚本不需要 API key，用脚本化模型和一个记账工具，在子进程里真的 `os._exit`：
+
+```powershell
+python .\demo_events.py
+```
+
+它跑三个场景并打印 ledger 行数与日志体积，预期结果是 `1 / 0 / 2`——第三个场景正是"事件溯源解决不了副作用"的证据。
+
+已知局限：
+
+- 恢复的是上下文，不是现实。已删除的文件、已发出的请求不会被回滚；
+- `--resume-policy retry` 会重复非幂等命令，这是语义决定的，不是 bug；
+- 日志包含完整命令输出，可能夹带敏感信息，且只追加、无法删除；
+- 回放成本随事件数线性增长，没有快照机制；
+- 每个事件都 `fsync`，一次工具调用多两次同步写盘。
+
 ## 安全提示
 
 **这是本机任意命令执行器。** 模型生成的 PowerShell 会直接以当前用户权限运行，可能读写/删除文件、访问网络或执行任意程序。请只在可信目录或隔离环境里使用，并在执行前留意 stderr 中的 `[tool]` 命令预览。
@@ -149,7 +198,7 @@ python .\agent.py --no-banner
 
 - 非流式输出；
 - 单工具；
-- 无对话持久化；
+- 持久化是可选的单次任务事件日志，默认不写盘，交互模式不记录；
 - 无命令审批、沙箱、MCP 或多模型路由。
 
 ## 测试

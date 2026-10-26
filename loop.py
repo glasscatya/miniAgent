@@ -55,7 +55,8 @@ def run_agent(
     runtime: Runtime,
     messages: list[dict[str, Any]],
     registry: ToolRegistry,
+    ctx: AgentContext | None = None,
 ) -> str:
-    """Run one task against the live backend (nothing is recorded)."""
-    ctx = LiveContext(runtime, registry)
-    return run_task(ctx, messages, registry.specs(), runtime.config.max_turns)
+    """Run one task, defaulting to the live backend (nothing is recorded)."""
+    context = ctx if ctx is not None else LiveContext(runtime, registry)
+    return run_task(context, messages, registry.specs(), runtime.config.max_turns)
